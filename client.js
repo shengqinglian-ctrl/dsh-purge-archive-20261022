@@ -8151,7 +8151,12 @@ body[data-ds-dark-theme] .dshp-rewind-item span{color:var(--dsw-alias-label-tert
 			const [confirmSkip, setConfirmSkip] = useState(false);
 			const [status, setStatus] = useState(null);
 			const [busy, setBusy] = useState(false);
-			const cacheRef = useRef({ at: 0, ready: false });
+			const cacheRef = useRef({
+				at: 0,
+				ready: (() => {
+					try { return window.localStorage.getItem("dshp_env_ready") === "1"; } catch { return false; }
+				})(),
+			});
 			const openRef = useRef(false);
 			openRef.current = open;
 
@@ -8160,20 +8165,32 @@ body[data-ds-dark-theme] .dshp-rewind-item span{color:var(--dsw-alias-label-tert
 				const ready = !!(r && r.ready);
 				cacheRef.current = { at: Date.now(), ready: ready, skipped: !!(r && r.skipped) };
 				setStatus(r);
+				try {
+					if (ready) window.localStorage.setItem("dshp_env_ready", "1");
+					else window.localStorage.removeItem("dshp_env_ready");
+				} catch { /* ignore */ }
+				if (ready) {
+					setOpen(false);
+					setConfirmSkip(false);
+				}
 				return r;
 			}, []);
 
 			const blockAndOpen = useCallback(() => {
 				setConfirmSkip(false);
-				refresh();
-				/* 第一次：只走完整授权窗 → 授权后进环境适配页 */
-				if (!readDrillAuth()) {
-					setOpen(false);
-					requestDrillEnv();
-					return true;
-				}
-				/* 已授权过：只弹精简环境适配窗，不再自动拉开整块演练台 */
-				setOpen(true);
+				refresh().then((r) => {
+					if (r && r.ready) return;
+					/* 第一次：只走完整授权窗 → 授权后进环境适配页 */
+					if (!readDrillAuth()) {
+						setOpen(false);
+						requestDrillEnv();
+						return;
+					}
+					/* 已授权过：只弹精简环境适配窗，不再自动拉开整块演练台 */
+					setOpen(true);
+				}).catch(() => {
+					setOpen(true);
+				});
 				return true;
 			}, [refresh]);
 
@@ -8243,7 +8260,6 @@ body[data-ds-dark-theme] .dshp-rewind-item span{color:var(--dsw-alias-label-tert
 				let alive = true;
 				const tick = () => {
 					if (!alive) return;
-					if (!isRedteamModeActive()) return;
 					refresh();
 				};
 				tick();
